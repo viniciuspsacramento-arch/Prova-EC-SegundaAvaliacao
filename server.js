@@ -8,18 +8,49 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Banco de dados ──────────────────────────────────────────────────────────
+// Railway MySQL costuma expor MYSQL_URL / MYSQL_PUBLIC_URL; o painel às vezes só referencia esses nomes.
+// Também aceitamos MYSQLHOST + MYSQLUSER + MYSQLPASSWORD + MYSQLPORT + MYSQLDATABASE (padrão Railway).
 function resolveDbUrl() {
-  const envUrl = (process.env.DATABASE_URL || '').trim();
-  if (!envUrl || envUrl.includes('SENHA') || envUrl.includes('PORTA') || envUrl.startsWith('${{')) {
-    throw new Error(
-      'DATABASE_URL inválida ou ausente. Configure no Railway ou no arquivo .env (veja .env.example).'
-    );
+  const enc = (s) => encodeURIComponent(String(s ?? ''));
+
+  const fromParts = () => {
+    const host = process.env.MYSQLHOST || process.env.MYSQL_HOST || '';
+    const user = process.env.MYSQLUSER || process.env.MYSQL_USER || 'root';
+    const pass =
+      process.env.MYSQLPASSWORD ||
+      process.env.MYSQL_PASSWORD ||
+      process.env.MYSQL_ROOT_PASSWORD ||
+      '';
+    const port = process.env.MYSQLPORT || process.env.MYSQL_PORT || '3306';
+    const database =
+      process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || process.env.MYSQL_DATABASE_NAME || '';
+    if (host && database && pass !== '') {
+      return `mysql://${enc(user)}:${enc(pass)}@${host}:${port}/${enc(database)}`;
+    }
+    return '';
+  };
+
+  const candidates = [
+    process.env.DATABASE_URL,
+    process.env.MYSQL_URL,
+    process.env.MYSQL_PUBLIC_URL,
+    fromParts(),
+  ]
+    .map((s) => (typeof s === 'string' ? s.trim() : ''))
+    .filter(Boolean);
+
+  for (const envUrl of candidates) {
+    if (envUrl.includes('SENHA') || envUrl.includes('PORTA') || envUrl.startsWith('${{')) continue;
+    try {
+      const u = new URL(envUrl);
+      if (u.protocol === 'mysql:' && u.hostname && u.hostname !== 'host') return envUrl;
+    } catch (_) {}
   }
-  try {
-    const u = new URL(envUrl);
-    if (u.protocol === 'mysql:' && u.hostname && u.hostname !== 'host') return envUrl;
-  } catch (_) {}
-  throw new Error('DATABASE_URL deve ser uma URL mysql:// válida.');
+
+  throw new Error(
+    'Nenhuma URL MySQL válida. No Railway: referencie MYSQL_URL ou DATABASE_URL do serviço MySQL, ' +
+      'ou defina DATABASE_URL manualmente (mysql://...). Variáveis aceitas: DATABASE_URL, MYSQL_URL, MYSQL_PUBLIC_URL, ou MYSQLHOST+MYSQLUSER+MYSQLPASSWORD+MYSQLDATABASE.'
+  );
 }
 
 const DB_URL = resolveDbUrl();
