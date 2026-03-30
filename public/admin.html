@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Painel Admin — Estatística Computacional</title>
+  <style>
+    :root {
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --primary: #1d4ed8;
+      --ok: #166534;
+      --warn: #b45309;
+      --border: #e2e8f0;
+      --bad: #991b1b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .wrap { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+    }
+    .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .title { font-size: 1.05rem; font-weight: 700; }
+    .muted { color: var(--muted); font-size: .9rem; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+    }
+    input, select, button {
+      height: 38px;
+      border-radius: 10px;
+      border: 1px solid #cbd5e1;
+      padding: 0 12px;
+      font-size: .92rem;
+      background: white;
+    }
+    button {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button.secondary {
+      background: #fff;
+      color: var(--text);
+      border-color: #cbd5e1;
+    }
+    button.danger {
+      background: #dc2626;
+      border-color: #dc2626;
+      color: #fff;
+    }
+    button.success {
+      background: #16a34a;
+      border-color: #16a34a;
+      color: #fff;
+    }
+    button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+    .acoes-btns {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .9rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 10px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+    th { color: #334155; font-size: .82rem; font-weight: 700; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: .78rem;
+      font-weight: 700;
+    }
+    .status.ok { color: var(--ok); background: #dcfce7; }
+    .status.warn { color: var(--warn); background: #fef3c7; }
+    .login {
+      max-width: 430px;
+      margin: 60px auto;
+      padding: 24px;
+    }
+    .login h1 { margin-top: 0; font-size: 1.15rem; }
+    .msg { color: var(--bad); margin-top: 10px; min-height: 20px; font-size: .9rem; }
+    #painel { display: none; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .detalhes { padding: 14px 16px; }
+    .detalhes h3 { margin: 4px 0 10px; }
+    .small { font-size: .84rem; color: var(--muted); }
+    @media (max-width: 900px) {
+      table { font-size: .82rem; }
+      th, td { padding: 8px 6px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="login" class="card login">
+      <h1>🔒 Acesso administrativo</h1>
+      <p class="muted">Informe a senha do painel para monitorar tentativas e resultados.</p>
+      <input id="senha" type="password" placeholder="Senha do admin" style="width:100%">
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button id="btn-entrar">Entrar</button>
+      </div>
+      <div id="msg-login" class="msg"></div>
+    </div>
+
+    <div id="painel">
+      <div class="card">
+        <div class="head">
+          <div>
+            <div class="title">Painel — Estatística Computacional — Segunda Aval.</div>
+            <div id="ultima-atualizacao" class="muted">Atualização: --</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button id="btn-refresh" class="secondary">Atualizar</button>
+            <button id="btn-enviar-todos" class="success">Enviar para todos</button>
+            <button id="btn-excluir-todos" class="danger">Excluir todos</button>
+            <button id="btn-sair" class="secondary">Sair</button>
+          </div>
+        </div>
+        <div class="controls">
+          <input id="filtro-nome" type="text" placeholder="Filtrar por nome/matrícula/e-mail" style="min-width:300px;flex:1">
+          <select id="filtro-status">
+            <option value="todos">Todos</option>
+            <option value="em_andamento">Em andamento</option>
+            <option value="finalizada">Finalizada</option>
+          </select>
+        </div>
+        <div style="overflow:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Aluno</th>
+                <th>Matrícula</th>
+                <th>E-mail</th>
+                <th>Status</th>
+                <th>Nota (%)</th>
+                <th>Tempo (s)</th>
+                <th>Trocas aba</th>
+                <th>Localização</th>
+                <th>Início</th>
+                <th>Fim</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card detalhes">
+          <h3>Detalhes da tentativa</h3>
+          <div id="detalhes-meta" class="small">Selecione uma tentativa para ver respostas.</div>
+          <div id="detalhes-respostas" style="margin-top:10px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const S = {
+      senha: localStorage.getItem('admin_password') || '',
+      tentativas: []
+    };
+
+    const login = document.getElementById('login');
+    const painel = document.getElementById('painel');
+    const msgLogin = document.getElementById('msg-login');
+    const senhaInput = document.getElementById('senha');
+    const tbody = document.getElementById('tbody');
+    const filtroNome = document.getElementById('filtro-nome');
+    const filtroStatus = document.getElementById('filtro-status');
+    const ultimaAtualizacao = document.getElementById('ultima-atualizacao');
+
+    if (S.senha) {
+      senhaInput.value = S.senha;
+    }
+
+    function fmtData(valor) {
+      if (!valor) return '-';
+      return new Date(valor).toLocaleString('pt-BR');
+    }
+
+    function statusTag(finalizado) {
+      return finalizado
+        ? '<span class="status ok">Finalizada</span>'
+        : '<span class="status warn">Em andamento</span>';
+    }
+
+    function resumoLocal(t) {
+      const ip = t.geo_ip_ceara === 1 ? 'IP: CE ✓' : t.geo_ip_ceara === 0 ? 'IP: CE ✗' : 'IP: —';
+      const gps = t.geo_gps_dentro_campus === 1 ? 'GPS: campus ✓' : t.geo_gps_dentro_campus === 0 ? 'GPS: fora' : 'GPS: —';
+      const cid = t.geo_ip_cidade ? `<span class="small" title="${(t.geo_ip_estado || '') + ' · ' + (t.geo_ip_pais || '')}">${t.geo_ip_cidade}</span>` : '';
+      return `<div style="font-size:.8rem;line-height:1.35">${ip}<br>${gps}${cid ? '<br>' + cid : ''}</div>`;
+    }
+
+    async function api(path) {
+      const r = await fetch(path, {
+        headers: { 'x-admin-password': S.senha }
+      });
+      if (!r.ok) {
+        let msg = 'Erro na requisição.';
+        try {
+          const j = await r.json();
+          msg = j.error || msg;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+      return r.json();
+    }
+
+    async function apiPost(path, bodyObj) {
+      const r = await fetch(path, {
+        method: 'POST',
+        headers: { 'x-admin-password': S.senha, 'Content-Type': 'application/json' },
+        body: bodyObj ? JSON.stringify(bodyObj) : '{}'
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'Erro na requisição.');
+      return j;
+    }
+
+    async function apiDelete(path) {
+      const r = await fetch(path, {
+        method: 'DELETE',
+        headers: { 'x-admin-password': S.senha }
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'Erro na requisição.');
+      return j;
+    }
+
+    function renderTabela() {
+      const termo = (filtroNome.value || '').trim().toLowerCase();
+      const status = filtroStatus.value;
+
+      const rows = S.tentativas.filter(t => {
+        const txt = `${t.nome_aluno || ''} ${t.matricula || ''} ${t.email || ''}`.toLowerCase();
+        const okTermo = !termo || txt.includes(termo);
+        const okStatus =
+          status === 'todos' ||
+          (status === 'finalizada' && !!t.finalizado_em) ||
+          (status === 'em_andamento' && !t.finalizado_em);
+        return okTermo && okStatus;
+      });
+
+      tbody.innerHTML = rows.map(t => `
+        <tr>
+          <td>${t.id}</td>
+          <td>${t.nome_aluno || '-'}</td>
+          <td>${t.matricula || '-'}</td>
+          <td>${t.email || '-'}</td>
+          <td>${statusTag(t.finalizado_em)}</td>
+          <td>${t.pontuacao ?? '-'}</td>
+          <td>${t.tempo_total ?? '-'}</td>
+          <td>${t.trocas_aba ?? 0}</td>
+          <td>${resumoLocal(t)}</td>
+          <td>${fmtData(t.iniciado_em)}</td>
+          <td>${fmtData(t.finalizado_em)}</td>
+          <td><div class="acoes-btns">
+            <button class="secondary" onclick="verDetalhes(${t.id})">Ver</button>
+            <button class="success" onclick="enviarEmail(${t.id}, this)" ${!t.finalizado_em || !t.email ? 'disabled title="Prova não finalizada ou sem e-mail"' : ''}>Enviar</button>
+            <button class="danger" onclick="excluirTentativa(${t.id}, this)">Excluir</button>
+          </div></td>
+        </tr>
+      `).join('');
+    }
+
+    async function carregar() {
+      const data = await api('/api/admin/tentativas');
+      S.tentativas = data;
+      renderTabela();
+      ultimaAtualizacao.textContent = `Atualização: ${new Date().toLocaleString('pt-BR')}`;
+    }
+
+    window.verDetalhes = async (id) => {
+      try {
+        const data = await api(`/api/admin/tentativas/${id}`);
+        const t = data.tentativa;
+        const geoLinha = [
+          t.geo_ip_cidade || '—', t.geo_ip_estado || '', t.geo_ip_pais || ''
+        ].filter(Boolean).join(' · ');
+        const gpsTxt = t.geo_gps_dentro_campus === 1 ? 'dentro do perímetro (GPS)' :
+          t.geo_gps_dentro_campus === 0 ? 'fora do perímetro (GPS)' : 'GPS não informado / negado';
+        document.getElementById('detalhes-meta').innerHTML = `
+          <strong>Tentativa #${t.id}</strong> · ${t.nome_aluno} · Matrícula ${t.matricula}<br>
+          E-mail: ${t.email || '-'} · Status: ${t.finalizado_em ? 'Finalizada' : 'Em andamento'} · Nota: ${t.pontuacao ?? '-'}%<br>
+          <span class="small">IP (~): ${geoLinha} · Ceará (IP): ${t.geo_ip_ceara === 1 ? 'sim' : t.geo_ip_ceara === 0 ? 'não' : '—'} · ${gpsTxt}
+          ${t.geo_gps_lat != null ? ` · GPS lat/lon: ${Number(t.geo_gps_lat).toFixed(5)}, ${Number(t.geo_gps_lon).toFixed(5)} (±${t.geo_gps_precisao_m ?? '?'} m)` : ''}</span>
+        `;
+
+        if (!data.respostas || !data.respostas.length) {
+          document.getElementById('detalhes-respostas').innerHTML = '<div class="small">Nenhuma resposta registrada ainda.</div>';
+          return;
+        }
+
+        document.getElementById('detalhes-respostas').innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>Q</th>
+                <th>Resposta do aluno</th>
+                <th>Correta?</th>
+                <th>Resposta correta</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.respostas.map(r => `
+                <tr>
+                  <td>${r.ordem}</td>
+                  <td>${r.resposta_dada || '-'}</td>
+                  <td>${r.acertou ? '✅' : '❌'}</td>
+                  <td>${r.resposta_correta || '-'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } catch (e) {
+        alert(`Erro ao carregar detalhes: ${e.message}`);
+      }
+    };
+
+    window.excluirTentativa = async (id, btn) => {
+      if (!confirm(`Excluir tentativa #${id}? Todas as respostas serão removidas permanentemente.`)) return;
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const r = await fetch(`/api/admin/tentativas/${id}`, {
+          method: 'DELETE',
+          headers: { 'x-admin-password': S.senha }
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Erro ao excluir.');
+        alert(j.message || 'Excluída!');
+        await carregar();
+      } catch (e) {
+        alert(`Erro: ${e.message}`);
+        btn.disabled = false;
+        btn.textContent = 'Excluir';
+      }
+    };
+
+    window.enviarEmail = async (id, btn) => {
+      const t = S.tentativas.find(x => x.id === id);
+      const dest = t ? t.email : '?';
+      if (!confirm(`Enviar resultado da tentativa #${id} para ${dest}?`)) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = 'Enviando…';
+      try {
+        const r = await fetch(`/api/admin/tentativas/${id}/enviar`, {
+          method: 'POST',
+          headers: { 'x-admin-password': S.senha, 'Content-Type': 'application/json' }
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'Erro ao enviar.');
+        alert(j.message || 'E-mail enviado!');
+        btn.textContent = 'Enviado ✓';
+      } catch (e) {
+        alert(`Erro: ${e.message}`);
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    };
+
+    document.getElementById('btn-entrar').onclick = async () => {
+      msgLogin.textContent = '';
+      S.senha = senhaInput.value.trim();
+      if (!S.senha) {
+        msgLogin.textContent = 'Informe a senha.';
+        return;
+      }
+      try {
+        const auth = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: S.senha })
+        });
+        if (!auth.ok) {
+          let erro = 'Senha incorreta.';
+          try {
+            const j = await auth.json();
+            erro = j.error || erro;
+          } catch (_) {}
+          throw new Error(erro);
+        }
+        await carregar();
+        localStorage.setItem('admin_password', S.senha);
+        login.style.display = 'none';
+        painel.style.display = 'block';
+      } catch (e) {
+        msgLogin.textContent = `Falha no login: ${e.message}`;
+      }
+    };
+
+    document.getElementById('btn-refresh').onclick = async () => {
+      try {
+        await carregar();
+      } catch (e) {
+        alert(`Erro ao atualizar: ${e.message}`);
+      }
+    };
+
+    document.getElementById('btn-enviar-todos').onclick = async () => {
+      if (!confirm('Enviar resultado por e-mail para todas as provas finalizadas que tenham e-mail cadastrado?\n\n(São todos os registros desta avaliação no banco, não só os filtrados na tela.)')) return;
+      const btn = document.getElementById('btn-enviar-todos');
+      btn.disabled = true;
+      const old = btn.textContent;
+      btn.textContent = 'Enviando…';
+      try {
+        const j = await apiPost('/api/admin/tentativas/enviar-todos');
+        let msg = `Concluído.\nEnviados: ${j.enviados} de ${j.total}.\nFalhas: ${j.falhas}.`;
+        if (j.detalhes_falhas && j.detalhes_falhas.length) {
+          msg += '\n\nFalhas:\n' + j.detalhes_falhas.map(f => `#${f.id}: ${f.error}`).join('\n');
+        }
+        alert(msg);
+        await carregar();
+      } catch (e) {
+        alert(`Erro: ${e.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    };
+
+    document.getElementById('btn-excluir-todos').onclick = async () => {
+      if (!confirm('ATENÇÃO: apaga TODAS as tentativas e respostas desta prova no banco. Não dá para desfazer.\n\nConfirma o primeiro passo?')) return;
+      const conf = prompt('Digite EXCLUIR (em maiúsculas) para confirmar:');
+      if (conf !== 'EXCLUIR') {
+        alert('Cancelado.');
+        return;
+      }
+      const btn = document.getElementById('btn-excluir-todos');
+      btn.disabled = true;
+      const old = btn.textContent;
+      btn.textContent = 'Excluindo…';
+      try {
+        const j = await apiDelete('/api/admin/tentativas/todos');
+        alert(`Excluídas ${j.excluidas} tentativa(s).`);
+        await carregar();
+      } catch (e) {
+        alert(`Erro: ${e.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    };
+
+    document.getElementById('btn-sair').onclick = () => {
+      localStorage.removeItem('admin_password');
+      S.senha = '';
+      login.style.display = 'block';
+      painel.style.display = 'none';
+      senhaInput.value = '';
+      msgLogin.textContent = '';
+    };
+
+    filtroNome.oninput = renderTabela;
+    filtroStatus.onchange = renderTabela;
+  </script>
+</body>
+</html>

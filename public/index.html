@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estatística Computacional — Segunda Avaliação</title>
+<style>
+  :root {
+    --azul:    #1a3a5c;
+    --azul2:   #245a8c;
+    --verde:   #16a34a;
+    --vermelho:#dc2626;
+    --cinza:   #f1f5f9;
+    --borda:   #cbd5e1;
+    --texto:   #1e293b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--cinza);
+    color: var(--texto);
+    min-height: 100vh;
+  }
+
+  /* ── Telas ───────────────────────────────────── */
+  .tela { display: none; }
+  .tela.ativa { display: block; }
+
+  /* ── Header fixo durante a prova ─────────────── */
+  #header-prova {
+    display: none;
+    position: sticky; top: 0; z-index: 100;
+    background: var(--azul);
+    color: #fff;
+    padding: 10px 20px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+  #header-prova.visivel { display: flex; }
+  #header-prova .info { font-size: .85rem; opacity: .85; }
+  #header-prova .nome-aluno-header { font-weight: 700; font-size: 1rem; }
+
+  #timer {
+    background: #fff;
+    color: var(--azul);
+    font-weight: 800;
+    font-size: 1.2rem;
+    padding: 6px 16px;
+    border-radius: 8px;
+    min-width: 90px;
+    text-align: center;
+  }
+  #timer.urgente { background: #fef2f2; color: var(--vermelho); animation: pisca 1s infinite; }
+  @keyframes pisca { 50% { opacity: .5; } }
+
+  /* ── Card central ─────────────────────────────── */
+  .card {
+    max-width: 680px;
+    margin: 40px auto;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,.08);
+    overflow: hidden;
+  }
+  .card-header {
+    background: var(--azul);
+    color: #fff;
+    padding: 28px 32px 20px;
+  }
+  .card-header h1 { font-size: 1.3rem; font-weight: 700; margin-bottom: 4px; }
+  .card-header p  { font-size: .88rem; opacity: .8; }
+  .card-body { padding: 32px; }
+
+  /* ── Formulário de entrada ────────────────────── */
+  label { display: block; font-weight: 600; margin-bottom: 6px; font-size: .9rem; }
+  input[type=text], select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 2px solid var(--borda);
+    border-radius: 10px;
+    font-size: 1rem;
+    transition: border-color .2s;
+    background: #fff;
+  }
+  input[type=text]:focus, select:focus {
+    outline: none;
+    border-color: var(--azul2);
+  }
+  .campo { margin-bottom: 20px; }
+
+  /* ── Botões ───────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 13px 28px;
+    border: none; border-radius: 10px;
+    font-size: 1rem; font-weight: 700;
+    cursor: pointer;
+    transition: transform .1s, opacity .2s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primario { background: var(--azul); color: #fff; width: 100%; margin-top: 8px; }
+  .btn-primario:hover { opacity: .9; }
+  .btn-verde  { background: var(--verde);   color: #fff; }
+  .btn-vermelho { background: var(--vermelho); color: #fff; }
+  .btn-lg { font-size: 1.1rem; padding: 16px 32px; }
+
+  /* ── Instrucoes ───────────────────────────────── */
+  .aviso {
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-size: .9rem;
+    margin-bottom: 16px;
+  }
+  .aviso ul { padding-left: 18px; margin-top: 8px; }
+  .aviso li { margin-bottom: 6px; }
+
+  /* ── Barra de progresso ───────────────────────── */
+  .progresso-wrap { margin-bottom: 24px; }
+  .progresso-label {
+    display: flex; justify-content: space-between;
+    font-size: .8rem; font-weight: 600; color: #64748b;
+    margin-bottom: 6px;
+  }
+  .progresso-bar {
+    height: 8px; background: var(--borda); border-radius: 99px; overflow: hidden;
+  }
+  .progresso-fill {
+    height: 100%; background: var(--azul2);
+    border-radius: 99px; transition: width .4s;
+  }
+
+  /* ── Questão ──────────────────────────────────── */
+  .questao {
+    background: #f8fafc;
+    border: 1px solid var(--borda);
+    border-radius: 12px;
+    padding: 22px;
+    margin-bottom: 20px;
+  }
+  .questao-num {
+    font-size: .75rem; font-weight: 700; text-transform: uppercase;
+    color: var(--azul2); letter-spacing: .06em; margin-bottom: 10px;
+  }
+  .questao-enunciado {
+    font-size: .95rem; line-height: 1.65;
+    margin-bottom: 16px;
+    white-space: pre-wrap;
+  }
+  .alternativas { display: flex; flex-direction: column; gap: 8px; }
+  .alt-label {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 11px 14px;
+    border: 2px solid var(--borda);
+    border-radius: 9px;
+    cursor: pointer;
+    font-size: .92rem;
+    transition: border-color .15s, background .15s;
+    user-select: none;
+  }
+  .alt-label:hover { border-color: var(--azul2); background: #f0f6ff; }
+  .alt-label input[type=radio] { margin-top: 2px; accent-color: var(--azul2); flex-shrink: 0; }
+  .alt-label.selecionada { border-color: var(--azul2); background: #e8f0fe; }
+
+  /* ── Marca d'água ─────────────────────────────── */
+  #watermark {
+    position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem; font-weight: 700; color: rgba(26,58,92,.06);
+    transform: rotate(-30deg); white-space: nowrap;
+    text-transform: uppercase;
+    user-select: none;
+  }
+
+  /* ── Resultado ─────────────────────────────────── */
+  .nota-grande {
+    font-size: 3.5rem; font-weight: 900;
+    text-align: center; margin: 16px 0 4px;
+  }
+  .nota-grande.aprovado { color: var(--verde); }
+  .nota-grande.reprovado { color: var(--vermelho); }
+  .nota-sub { text-align: center; color: #64748b; font-size: .9rem; margin-bottom: 24px; }
+
+  .resp-item {
+    padding: 14px 16px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    border: 1px solid;
+    font-size: .88rem;
+  }
+  .resp-item.certo   { background: #f0fdf4; border-color: #86efac; }
+  .resp-item.errado  { background: #fef2f2; border-color: #fca5a5; }
+  .resp-item .q-num  { font-weight: 700; margin-bottom: 4px; font-size: .8rem; }
+  .resp-item .r-dado { margin-bottom: 3px; }
+  .resp-item .r-certo { color: var(--verde); font-weight: 600; }
+  .resp-item .r-errado { color: var(--vermelho); }
+
+  .aviso-tab {
+    display: none;
+    position: fixed; inset: 0; z-index: 10000;
+    background: rgba(0,0,0,.85);
+    align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px; text-align: center;
+    color: #fff;
+  }
+  .aviso-tab.visivel { display: flex; }
+  .aviso-tab h2 { font-size: 1.6rem; }
+  .aviso-tab p { font-size: 1rem; opacity: .85; }
+
+  @media (max-width: 640px) {
+    .card { margin: 0; border-radius: 0; }
+    .card-body { padding: 20px; }
+    .card-header { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Marca d'água (ativa durante a prova) -->
+<div id="watermark"></div>
+
+<!-- Aviso troca de aba -->
+<div class="aviso-tab" id="aviso-tab">
+  <h2>⚠️ Saída detectada!</h2>
+  <p>Você saiu da aba da prova.<br>Esta ocorrência foi registrada.</p>
+  <button class="btn btn-vermelho" onclick="fecharAvisoTab()">Entendi, voltar à prova</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     TELA 1 — ENTRADA
+════════════════════════════════════════════════════════════════════ -->
+<div id="tela-inicio" class="tela ativa">
+  <div class="card">
+    <div class="card-header">
+      <h1>Estatística Computacional — Segunda Avaliação</h1>
+      <p>30/03/2026 · Universidade Federal do Cariri · Prof. Vinicius Sacramento</p>
+    </div>
+    <div style="display:flex;gap:12px;padding:12px 20px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:.85rem;color:#475569;">
+      <span>📋 <strong>8 questões</strong></span>
+      <span>·</span>
+      <span>🏆 <strong>1,25 ponto</strong> cada</span>
+      <span>·</span>
+      <span>📊 Total: <strong>10,00 pontos</strong></span>
+      <span>·</span>
+      <span>⏱️ <strong>120 minutos</strong></span>
+    </div>
+    <div class="card-body">
+      <div class="campo">
+        <label for="input-nome">Nome completo do aluno</label>
+        <input type="text" id="input-nome" placeholder="Digite seu nome completo" autocomplete="off">
+      </div>
+      <div class="campo">
+        <label for="input-matricula">Número de matrícula</label>
+        <input type="text" id="input-matricula" placeholder="Ex.: 2021000123"
+               maxlength="20" autocomplete="off" inputmode="numeric"
+               oninput="this.value=this.value.replace(/\D/g,'')">
+      </div>
+      <div class="campo">
+        <label for="input-email">E-mail institucional</label>
+        <input type="email" id="input-email" placeholder="seuemail@alu.ufc.br ou @ufca.edu.br"
+               autocomplete="off">
+        <p style="margin-top:6px;font-size:.8rem;color:#64748b;">
+          Será utilizado para devolver o resultado da prova.
+        </p>
+      </div>
+      <button class="btn btn-primario btn-lg" onclick="iniciarProva()">
+        Iniciar Prova →
+      </button>
+      <p id="msg-inicio" style="margin-top:12px;color:var(--vermelho);font-size:.9rem;"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     TELA 2 — INSTRUÇÕES
+════════════════════════════════════════════════════════════════════ -->
+<div id="tela-instrucoes" class="tela">
+  <div class="card">
+    <div class="card-header">
+      <h1 id="titulo-instrucoes"></h1>
+      <p id="subtitulo-instrucoes"></p>
+      <p id="aviso-geo-instrucoes" style="display:none;font-size:.85rem;color:#b45309;margin-top:8px;"></p>
+    </div>
+    <div class="card-body">
+      <div class="aviso" style="background:#fef2f2;border-color:#fca5a5;">
+        <strong>🏛️ Prova presencial obrigatória</strong>
+        <p style="margin:.4rem 0 0;">
+          Esta avaliação deve ser realizada <strong>exclusivamente de forma presencial</strong>,
+          no ambiente autorizado pelo professor. A realização fora deste contexto
+          caracteriza irregularidade acadêmica.
+        </p>
+      </div>
+      <div class="aviso">
+        <strong>⚠️ Leia antes de iniciar:</strong>
+        <ul>
+          <li>A prova possui <strong>8 questões de múltipla escolha</strong>, valendo <strong>1,25 ponto cada</strong> (total: 10,00 pontos).</li>
+          <li>Você tem <strong id="tempo-instrucao">120 minutos</strong> para concluir.</li>
+          <li>Seleção de texto, cópia e clique direito estão <strong>desativados</strong> durante a prova.</li>
+          <li>Trocas de aba são <strong>registradas automaticamente</strong>.</li>
+          <li>Ao iniciar, foi solicitada sua <strong>localização</strong> (quando permitida) para conferência aproximada do campus da UFCA em Juazeiro do Norte.</li>
+          <li>Ao clicar em <em>Finalizar Prova</em>, as respostas não poderão ser alteradas.</li>
+        </ul>
+      </div>
+      <div class="aviso" style="background:#f0f9ff;border-color:#7dd3fc;">
+        <strong>📋 Atenção:</strong> Cada questão tem apenas uma alternativa correta.
+        Leia atentamente os dados fornecidos em cada questão.
+      </div>
+      <button class="btn btn-primario btn-lg" onclick="comecarProva()">
+        Entendi — Iniciar Agora ✓
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     TELA 3 — PROVA
+════════════════════════════════════════════════════════════════════ -->
+<div id="tela-prova" class="tela">
+  <div id="header-prova">
+    <div>
+      <div class="nome-aluno-header" id="header-nome"></div>
+      <div class="info" id="header-prova-titulo"></div>
+    </div>
+    <div id="timer">--:--</div>
+  </div>
+
+  <div style="max-width:680px;margin:0 auto;padding:24px 16px;">
+    <div class="progresso-wrap">
+      <div class="progresso-label">
+        <span>Progresso</span>
+        <span id="progresso-txt">0 de 0 respondidas</span>
+      </div>
+      <div class="progresso-bar"><div class="progresso-fill" id="progresso-fill" style="width:0%"></div></div>
+    </div>
+
+    <div id="lista-questoes"></div>
+
+    <button class="btn btn-verde btn-lg" style="width:100%;margin-top:8px" onclick="confirmarFinalizar()">
+      ✓ Finalizar Prova
+    </button>
+    <p style="text-align:center;font-size:.8rem;color:#94a3b8;margin-top:8px;">
+      Só finalize quando tiver certeza — a ação é irreversível.
+    </p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     TELA 4 — RESULTADO
+════════════════════════════════════════════════════════════════════ -->
+<div id="tela-resultado" class="tela">
+  <div class="card" style="margin-top:40px;text-align:center;">
+    <div class="card-body" style="padding:48px 32px;">
+      <div style="font-size:4rem;margin-bottom:16px;">✅</div>
+      <h1 style="font-size:1.8rem;color:var(--primario);margin-bottom:12px;">Prova concluída!</h1>
+      <p style="color:#64748b;font-size:1rem;">Suas respostas foram registradas com sucesso.<br>Você já pode fechar esta página.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// Título exibido alinhado ao servidor (fallback se a API falhar antes de preencher)
+const TITULO_PROVA_PADRAO = 'Estatística Computacional — Segunda Avaliação';
+function tituloProvaNaInterface() {
+  return (S.provaInfo && S.provaInfo.prova_titulo) ? S.provaInfo.prova_titulo : TITULO_PROVA_PADRAO;
+}
+
+// ─── Estado global ──────────────────────────────────────────────────────────
+const S = {
+  provaId: null,
+  provaInfo: null,   // { id, prova_titulo, tempo_limite }
+  tentativaId: null,
+  nomeAluno: '',
+  questoes: [],
+  respostas: {},     // { questao_id: alternativa_id }
+  timerInterval: null,
+  segundosRestantes: 0,
+  tempoGasto: 0,
+};
+
+// ─── Inicialização (sem carregamento antecipado de provas) ───────────────────
+// Nada a fazer no boot — servidor decide a prova via matrícula
+
+// ─── Proteções anti-cópia ────────────────────────────────────────────────────
+function ativarProtecoes() {
+  document.addEventListener('contextmenu', e => e.preventDefault());
+  document.addEventListener('keydown', e => {
+    const bloqueadas = ['c','x','v','p','a','s','u'];
+    if ((e.ctrlKey || e.metaKey) && bloqueadas.includes(e.key.toLowerCase())) e.preventDefault();
+    if (e.key === 'PrintScreen') e.preventDefault();
+  });
+  document.addEventListener('copy',  e => e.preventDefault());
+  document.addEventListener('cut',   e => e.preventDefault());
+  document.addEventListener('paste', e => e.preventDefault());
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && S.tentativaId) {
+      fetch(`/api/tentativas/${S.tentativaId}/troca-aba`, { method: 'POST' });
+      document.getElementById('aviso-tab').classList.add('visivel');
+    }
+  });
+}
+
+function fecharAvisoTab() {
+  document.getElementById('aviso-tab').classList.remove('visivel');
+}
+
+/** GPS do navegador (opcional) — usado para verificar proximidade ao campus UFCA Juazeiro */
+function obterGeoGps() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    const done = (v) => resolve(v);
+    const t = setTimeout(() => done(null), 14000);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        clearTimeout(t);
+        done({
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy_m: typeof pos.coords.accuracy === 'number' ? pos.coords.accuracy : null,
+        });
+      },
+      () => { clearTimeout(t); done(null); },
+      { enableHighAccuracy: true, timeout: 13000, maximumAge: 0 }
+    );
+  });
+}
+
+// ─── Iniciar prova via matrícula ─────────────────────────────────────────────
+async function iniciarProva() {
+  const nome       = document.getElementById('input-nome').value.trim();
+  const matricula  = document.getElementById('input-matricula').value.trim();
+  const email      = document.getElementById('input-email').value.trim();
+  const msg        = document.getElementById('msg-inicio');
+  const btn        = document.querySelector('#tela-inicio .btn-primario');
+
+  if (!nome)      { msg.textContent = 'Por favor, informe seu nome completo.'; return; }
+  if (!matricula) { msg.textContent = 'Por favor, informe sua matrícula.';     return; }
+  if (matricula.length < 3) { msg.textContent = 'Matrícula muito curta.'; return; }
+  if (!email || !email.includes('@')) { msg.textContent = 'Por favor, informe um e-mail válido.'; return; }
+  msg.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Localizando…';
+
+  let geo_gps = null;
+  try {
+    geo_gps = await obterGeoGps();
+  } catch (_) { geo_gps = null; }
+
+  btn.textContent = 'Aguarde…';
+
+  try {
+    const r = await fetch('/api/tentativas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matricula, nome_aluno: nome, email, geo_gps })
+    });
+    const data = await r.json();
+    if (data.error) {
+      msg.innerHTML = r.status === 409
+        ? `<strong>Prova já realizada.</strong> ${data.error}`
+        : data.error;
+      btn.disabled=false; btn.textContent='Iniciar Prova →';
+      return;
+    }
+
+    const avisoGeoEl = document.getElementById('aviso-geo-instrucoes');
+    if (data.geo_aviso && avisoGeoEl) {
+      avisoGeoEl.textContent = 'Aviso: ' + data.geo_aviso;
+      avisoGeoEl.style.display = 'block';
+    } else if (avisoGeoEl) {
+      avisoGeoEl.style.display = 'none';
+      avisoGeoEl.textContent = '';
+    }
+
+    S.nomeAluno   = nome;
+    S.tentativaId = data.id;
+    S.provaId     = data.prova_id;
+    S.provaInfo   = data;
+    S.segundosRestantes = (data.tempo_limite || 120) * 60;
+
+    // Tela de instruções
+    document.getElementById('titulo-instrucoes').textContent    = data.prova_titulo || TITULO_PROVA_PADRAO;
+    document.getElementById('subtitulo-instrucoes').textContent = `Aluno: ${nome} · Matrícula: ${matricula}`;
+    document.getElementById('tempo-instrucao').textContent      = `${data.tempo_limite || 120} minutos`;
+
+    trocarTela('tela-instrucoes');
+  } catch(e) {
+    msg.textContent = 'Erro de conexão. Tente novamente.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Iniciar Prova →';
+  }
+}
+
+async function comecarProva() {
+  // Carregar questões
+  const r = await fetch(`/api/tentativas/${S.tentativaId}/questoes`);
+  S.questoes = await r.json();
+
+  // Renderizar
+  renderizarQuestoes();
+
+  // Watermark
+  document.getElementById('watermark').textContent =
+    S.nomeAluno.toUpperCase() + ' · UFCA';
+
+  // Header
+  document.getElementById('header-nome').textContent = S.nomeAluno;
+  document.getElementById('header-prova-titulo').textContent = tituloProvaNaInterface();
+  document.getElementById('header-prova').classList.add('visivel');
+
+  // Proteções
+  ativarProtecoes();
+
+  // Timer
+  iniciarTimer();
+
+  trocarTela('tela-prova');
+}
+
+// ─── Renderizar questões ─────────────────────────────────────────────────────
+function renderizarQuestoes() {
+  const letras = ['a', 'b', 'c', 'd', 'e'];
+  const cont = document.getElementById('lista-questoes');
+  cont.innerHTML = '';
+
+  S.questoes.forEach((q, idx) => {
+    const div = document.createElement('div');
+    div.className = 'questao';
+    div.id = `q-${q.id}`;
+
+    const altsHTML = q.alternativas.map((a, i) => `
+      <label class="alt-label" id="alt-label-${q.id}-${a.id}">
+        <input type="radio" name="q${q.id}" value="${a.id}"
+               onchange="registrarResposta(${q.id}, ${a.id}, this)">
+        <span><strong>${letras[i]})</strong> ${a.texto}</span>
+      </label>`).join('');
+
+    div.innerHTML = `
+      <div class="questao-num">Questão ${idx + 1} · ${q.valor_questao} pts</div>
+      <div class="questao-enunciado" style="user-select:none">${q.enunciado}</div>
+      <div class="alternativas">${altsHTML}</div>`;
+    cont.appendChild(div);
+  });
+
+  atualizarProgresso();
+}
+
+function registrarResposta(questaoId, alternativaId, radio) {
+  // Visual: limpar seleções anteriores desta questão
+  document.querySelectorAll(`input[name="q${questaoId}"]`).forEach(r => {
+    r.closest('.alt-label').classList.remove('selecionada');
+  });
+  radio.closest('.alt-label').classList.add('selecionada');
+
+  S.respostas[questaoId] = alternativaId;
+  atualizarProgresso();
+
+  // Enviar ao servidor
+  fetch(`/api/tentativas/${S.tentativaId}/responder`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ questao_id: questaoId, alternativa_id: alternativaId })
+  });
+}
+
+function atualizarProgresso() {
+  const respondidas = Object.keys(S.respostas).length;
+  const total       = S.questoes.length;
+  const pct = total > 0 ? (respondidas / total) * 100 : 0;
+  document.getElementById('progresso-fill').style.width = pct + '%';
+  document.getElementById('progresso-txt').textContent = `${respondidas} de ${total} respondidas`;
+}
+
+// ─── Timer ───────────────────────────────────────────────────────────────────
+function iniciarTimer() {
+  const el = document.getElementById('timer');
+  S.timerInterval = setInterval(() => {
+    S.segundosRestantes--;
+    S.tempoGasto++;
+    const m = Math.floor(S.segundosRestantes / 60).toString().padStart(2, '0');
+    const s = (S.segundosRestantes % 60).toString().padStart(2, '0');
+    el.textContent = `${m}:${s}`;
+    if (S.segundosRestantes <= 300) el.classList.add('urgente');
+    if (S.segundosRestantes <= 0) {
+      clearInterval(S.timerInterval);
+      alert('⏰ Tempo esgotado! A prova será finalizada automaticamente.');
+      finalizarProva();
+    }
+  }, 1000);
+}
+
+// ─── Finalizar ───────────────────────────────────────────────────────────────
+function confirmarFinalizar() {
+  const respondidas = Object.keys(S.respostas).length;
+  const total       = S.questoes.length;
+  const faltam      = total - respondidas;
+  const msg = faltam > 0
+    ? `Você ainda tem ${faltam} questão(ões) sem resposta. Deseja finalizar mesmo assim?`
+    : 'Deseja finalizar a prova? Esta ação é irreversível.';
+  if (confirm(msg)) finalizarProva();
+}
+
+async function finalizarProva() {
+  clearInterval(S.timerInterval);
+  const r = await fetch(`/api/tentativas/${S.tentativaId}/finalizar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tempo_total: S.tempoGasto })
+  });
+  const data = await r.json();
+  if (data.error) { alert('Erro ao finalizar: ' + data.error); return; }
+
+  // Remover proteções visuais
+  document.getElementById('header-prova').classList.remove('visivel');
+  document.getElementById('watermark').textContent = '';
+
+  await mostrarResultado();
+}
+
+async function mostrarResultado() {
+  const r = await fetch(`/api/tentativas/${S.tentativaId}/resultado`);
+  const { tentativa, respostas } = await r.json();
+
+  const nota = parseFloat(tentativa.pontuacao);
+  const pontos = respostas.reduce((s, r) => s + parseFloat(r.valor_questao), 0);
+  const acertos_pts = respostas.filter(r => r.acertou).reduce((s, r) => s + parseFloat(r.valor_questao), 0);
+
+  document.getElementById('resultado-subtitulo').textContent =
+    `${tentativa.nome_aluno} · ${tentativa.prova_titulo || TITULO_PROVA_PADRAO}`;
+
+  const notaEl = document.getElementById('nota-grande');
+  notaEl.innerHTML = `<div class="nota-grande ${nota >= 60 ? 'aprovado' : 'reprovado'}">
+    ${acertos_pts.toFixed(1)} / ${pontos.toFixed(1)}
+  </div>`;
+  document.getElementById('resultado-info').innerHTML =
+    `${nota.toFixed(1)}% de aproveitamento · ` +
+    `${respostas.filter(r => r.acertou).length} acertos de ${respostas.length} questões` +
+    (tentativa.trocas_aba > 0 ? ` · ⚠️ ${tentativa.trocas_aba} troca(s) de aba registrada(s)` : '');
+
+  const lista = document.getElementById('lista-resultados');
+  lista.innerHTML = respostas.map(resp => `
+    <div class="resp-item ${resp.acertou ? 'certo' : 'errado'}">
+      <div class="q-num">Questão ${resp.ordem} ${resp.acertou ? '✓' : '✗'}</div>
+      <div class="questao-enunciado" style="font-size:.83rem;margin-bottom:8px;color:#475569">
+        ${resp.enunciado.length > 120 ? resp.enunciado.substring(0,120) + '…' : resp.enunciado}
+      </div>
+      <div class="r-dado ${resp.acertou ? 'r-certo' : 'r-errado'}">
+        Sua resposta: ${resp.resposta_dada}
+      </div>
+      ${!resp.acertou ? `<div class="r-certo">Resposta correta: ${resp.resposta_correta}</div>` : ''}
+    </div>`).join('');
+
+  trocarTela('tela-resultado');
+}
+
+// ─── Utilidades ──────────────────────────────────────────────────────────────
+function trocarTela(id) {
+  document.querySelectorAll('.tela').forEach(t => t.classList.remove('ativa'));
+  document.getElementById(id).classList.add('ativa');
+  window.scrollTo(0, 0);
+}
+
+// ─── Boot — nada a carregar antecipadamente ───────────────────────────────────
+document.getElementById('input-nome').focus();
+</script>
+</body>
+</html>
