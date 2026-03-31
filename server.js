@@ -526,6 +526,48 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
+// ─── GET /api/admin/provas — provas que batem com FILTRO (turmas I…V no ORDER BY titulo) ──
+app.get('/api/admin/provas', requireAdmin, async (req, res) => {
+  try {
+    const [rows] = await db().query(
+      `SELECT p.id, p.titulo, p.titulo_publico, p.tempo_limite, p.criado_em,
+              (SELECT COUNT(*) FROM tentativas t WHERE t.prova_id = p.id) AS n_tentativas,
+              (SELECT COUNT(*) FROM tentativas t WHERE t.prova_id = p.id AND t.finalizado_em IS NOT NULL) AS n_finalizadas,
+              (SELECT COUNT(*) FROM provas_questoes pq WHERE pq.prova_id = p.id) AS n_questoes
+       FROM provas p
+       WHERE p.titulo LIKE ?
+       ORDER BY p.titulo ASC`,
+      [FILTRO]
+    );
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── DELETE /api/admin/provas/:id — excluir prova (cascata: vínculos + tentativas + respostas) ──
+app.delete('/api/admin/provas/:id', requireAdmin, async (req, res) => {
+  const provaId = Number(req.params.id);
+  if (!Number.isFinite(provaId) || provaId < 1) {
+    return res.status(400).json({ error: 'ID inválido.' });
+  }
+  try {
+    const [del] = await db().query('DELETE FROM provas WHERE id = ? AND titulo LIKE ?', [provaId, FILTRO]);
+    if (!(del.affectedRows > 0)) {
+      return res.status(404).json({ error: 'Prova não encontrada ou fora do filtro desta aplicação.' });
+    }
+    const [[cnt]] = await db().query('SELECT COUNT(*) AS n FROM provas WHERE titulo LIKE ?', [FILTRO]);
+    const restantes = Number(cnt.n) || 0;
+    const aviso =
+      restantes < 5
+        ? `Restam ${restantes} prova(s) com este filtro. A aplicação espera 5 provas (turmas I–V, ordenadas por título). Ajuste o banco ou o env PROVA_TITULO_LIKE.`
+        : null;
+    res.json({ ok: true, excluida_id: provaId, provas_restantes_no_filtro: restantes, aviso });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── GET /api/admin/tentativas — painel administrativo ───────────────────────
 app.get('/api/admin/tentativas', requireAdmin, async (req, res) => {
   try {

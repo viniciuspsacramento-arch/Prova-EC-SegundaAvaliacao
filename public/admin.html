@@ -146,6 +146,36 @@
     </div>
 
     <div id="painel">
+      <div class="card" style="margin-bottom:16px">
+        <div class="head">
+          <div>
+            <div class="title">Provas no MySQL (filtro atual da aplicação)</div>
+            <div class="muted" style="max-width:52rem">
+              Cada turma (I…V) é uma linha em <code>provas</code>. A ordem abaixo é a mesma do sistema ao escolher a prova pela matrícula.
+              Excluir uma linha apaga a prova, questões vinculadas <em>só</em> nessa prova e <strong>todas</strong> as tentativas/respostas dela.
+            </div>
+          </div>
+          <button type="button" id="btn-refresh-provas" class="secondary">Recarregar provas</button>
+        </div>
+        <div style="overflow:auto;padding:0 18px 16px">
+          <table>
+            <thead>
+              <tr>
+                <th>Ordem (turma)</th>
+                <th>ID</th>
+                <th>Título</th>
+                <th>Título público</th>
+                <th>Qs</th>
+                <th>Tent.</th>
+                <th>Fin.</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-provas"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="card">
         <div class="head">
           <div>
@@ -215,6 +245,7 @@
     const filtroNome = document.getElementById('filtro-nome');
     const filtroStatus = document.getElementById('filtro-status');
     const ultimaAtualizacao = document.getElementById('ultima-atualizacao');
+    const tbodyProvas = document.getElementById('tbody-provas');
 
     if (S.senha) {
       senhaInput.value = S.senha;
@@ -244,6 +275,70 @@
         .replace(/"/g, '&quot;')
         .replace(/</g, '&lt;');
     }
+
+    function escHtml(s) {
+      return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    async function carregarProvas() {
+      if (!tbodyProvas) return;
+      try {
+        const list = await api('/api/admin/provas');
+        if (!list.length) {
+          tbodyProvas.innerHTML = '<tr><td colspan="8" class="muted">Nenhuma prova encontrada com o filtro configurado no servidor (PROVA_TITULO_LIKE).</td></tr>';
+          return;
+        }
+        tbodyProvas.innerHTML = list.map((p, ord) => {
+          const tituloJs = JSON.stringify(p.titulo || '');
+          return `
+          <tr>
+            <td><strong>${ord + 1}</strong> <span class="muted">(índice ${ord})</span></td>
+            <td>${p.id}</td>
+            <td>${escHtml(p.titulo)}</td>
+            <td class="small">${escHtml(p.titulo_publico || '—')}</td>
+            <td>${p.n_questoes ?? 0}</td>
+            <td>${p.n_tentativas ?? 0}</td>
+            <td>${p.n_finalizadas ?? 0}</td>
+            <td><button type="button" class="danger" onclick="excluirProva(${p.id}, ${tituloJs}, this)">Excluir prova</button></td>
+          </tr>`;
+        }).join('');
+      } catch (e) {
+        tbodyProvas.innerHTML = `<tr><td colspan="8" class="msg">${escHtml(e.message)}</td></tr>`;
+      }
+    }
+
+    window.excluirProva = async (id, titulo, btn) => {
+      const t = titulo || '(sem título)';
+      if (!confirm(
+        'EXCLUIR ESTA PROVA DO BANCO?\n\n' +
+        `ID ${id} — ${t}\n\n` +
+        'Apaga vínculos desta prova, todas as tentativas e respostas associadas. Não dá para desfazer.'
+      )) return;
+      btn.disabled = true;
+      const old = btn.textContent;
+      btn.textContent = '…';
+      try {
+        const r = await fetch(`/api/admin/provas/${id}`, {
+          method: 'DELETE',
+          headers: { 'x-admin-password': S.senha },
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'Erro ao excluir.');
+        let msg = `Prova #${id} excluída. Restam ${j.provas_restantes_no_filtro} prova(s) com o filtro atual.`;
+        if (j.aviso) msg += '\n\n⚠ ' + j.aviso;
+        alert(msg);
+        await carregarProvas();
+        await carregar();
+      } catch (e) {
+        alert(e.message);
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    };
 
     function colUltimoEnvio(t) {
       const ok = t.resultado_email_enviado_em;
@@ -337,6 +432,7 @@
       S.tentativas = data;
       renderTabela();
       ultimaAtualizacao.textContent = `Atualização: ${new Date().toLocaleString('pt-BR')}`;
+      await carregarProvas();
     }
 
     window.verDetalhes = async (id) => {
@@ -467,6 +563,14 @@
         await carregar();
       } catch (e) {
         alert(`Erro ao atualizar: ${e.message}`);
+      }
+    };
+
+    document.getElementById('btn-refresh-provas').onclick = async () => {
+      try {
+        await carregarProvas();
+      } catch (e) {
+        alert(`Erro: ${e.message}`);
       }
     };
 
