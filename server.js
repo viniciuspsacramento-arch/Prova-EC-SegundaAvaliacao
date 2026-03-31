@@ -9,18 +9,45 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Banco de dados ──────────────────────────────────────────────────────────
+/** Railway: Web service costuma receber referência a MYSQL_URL do plugin; às vezes só MYSQLHOST+MYSQLUSER+… */
 function resolveDbUrl() {
-  const envUrl = (process.env.DATABASE_URL || '').trim();
-  if (!envUrl || envUrl.includes('SENHA') || envUrl.includes('PORTA') || envUrl.startsWith('${{')) {
-    throw new Error(
-      'DATABASE_URL inválida ou ausente. Configure no Railway ou no arquivo .env (veja .env.example).'
-    );
+  const skip = (s) =>
+    !s ||
+    s.includes('SENHA') ||
+    s.includes('PORTA') ||
+    s.startsWith('${{');
+
+  const tryParse = (raw) => {
+    const envUrl = String(raw || '').trim();
+    if (skip(envUrl)) return null;
+    try {
+      const u = new URL(envUrl);
+      if (u.protocol === 'mysql:' && u.hostname && u.hostname !== 'host') return envUrl;
+    } catch (_) {}
+    return null;
+  };
+
+  for (const key of ['DATABASE_URL', 'MYSQL_URL', 'MYSQL_PUBLIC_URL']) {
+    const ok = tryParse(process.env[key]);
+    if (ok) return ok;
   }
-  try {
-    const u = new URL(envUrl);
-    if (u.protocol === 'mysql:' && u.hostname && u.hostname !== 'host') return envUrl;
-  } catch (_) {}
-  throw new Error('DATABASE_URL deve ser uma URL mysql:// válida.');
+
+  const host = (process.env.MYSQLHOST || process.env.MYSQL_HOST || '').trim();
+  const user = (process.env.MYSQLUSER || process.env.MYSQL_USER || 'root').trim();
+  const pass = String(
+    process.env.MYSQLPASSWORD || process.env.MYSQL_ROOT_PASSWORD || process.env.MYSQL_PASSWORD || ''
+  ).trim();
+  const port = String(process.env.MYSQLPORT || process.env.MYSQL_PORT || '3306').trim();
+  const database = (process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || 'railway').trim();
+
+  if (host && user) {
+    const enc = encodeURIComponent(pass);
+    return `mysql://${user}:${enc}@${host}:${port}/${database}`;
+  }
+
+  throw new Error(
+    'Sem URL MySQL. No Railway: defina DATABASE_URL (referência ao MySQL) ou MYSQL_URL, ou variáveis MYSQLHOST + MYSQLUSER + MYSQLPASSWORD + MYSQLDATABASE. Veja .env.example.'
+  );
 }
 
 const DB_URL = resolveDbUrl();
@@ -28,6 +55,22 @@ let pool;
 function db() {
   if (!pool) pool = mysql.createPool(DB_URL);
   return pool;
+}
+
+/** Colunas opcionais: painel mostra se o e-mail de resultado foi aceito pelo servidor de envio. */
+async function ensureEmailStatusColumns() {
+  const pool = db();
+  const stmts = [
+    'ALTER TABLE tentativas ADD COLUMN resultado_email_enviado_em DATETIME NULL',
+    'ALTER TABLE tentativas ADD COLUMN resultado_email_ultimo_erro VARCHAR(512) NULL',
+  ];
+  for (const sql of stmts) {
+    try {
+      await pool.query(sql);
+    } catch (e) {
+      if (e.code !== 'ER_DUP_FIELDNAME' && e.errno !== 1060) throw e;
+    }
+  }
 }
 
 // ─── Filtro: provas desta aplicação (título no MySQL). Sobrescreva com PROVA_TITULO_LIKE ──
@@ -491,6 +534,7 @@ app.get('/api/admin/tentativas', requireAdmin, async (req, res) => {
               t.pontuacao, t.tempo_total, t.trocas_aba,
               t.geo_ip_pais, t.geo_ip_estado, t.geo_ip_cidade, t.geo_ip_ceara,
               t.geo_gps_dentro_campus, t.geo_gps_precisao_m,
+              t.resultado_email_enviado_em, t.resultado_email_ultimo_erro,
               COALESCE(p.titulo_publico, p.titulo) AS prova_titulo
        FROM tentativas t
        JOIN provas p ON p.id = t.prova_id
@@ -512,6 +556,7 @@ app.get('/api/admin/tentativas/:id', requireAdmin, async (req, res) => {
               t.pontuacao, t.tempo_total, t.trocas_aba,
               t.geo_ip_pais, t.geo_ip_estado, t.geo_ip_cidade, t.geo_ip_lat, t.geo_ip_lon, t.geo_ip_ceara,
               t.geo_gps_lat, t.geo_gps_lon, t.geo_gps_precisao_m, t.geo_gps_dentro_campus,
+              t.resultado_email_enviado_em, t.resultado_email_ultimo_erro,
               COALESCE(p.titulo_publico, p.titulo) AS prova_titulo
        FROM tentativas t
        JOIN provas p ON p.id = t.prova_id
@@ -561,8 +606,13 @@ async function enviarHtmlEmail({ to, subject, html, replyTo }) {
 
   if (gmailUser && gmailPass) {
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: gmailUser, pass: gmailPass },
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: { user: gmailUser, pass: gmailPass.replace(/\s/g, '') },
+      connectionTimeout: 20000,
+      greetingTimeout: 15000,
+      socketTimeout: 45000,
     });
     const fromName = (process.env.MAIL_FROM_NAME || 'Prova — UFCA').trim();
     await transporter.sendMail({
@@ -687,12 +737,24 @@ async function enviarResultadoEmailPorTentativaId(tentId) {
   const replyTo = (process.env.MAIL_REPLY_TO || 'vinicius.sacramento@ufca.edu.br').trim();
   const subject = `Resultado — ${TITULO_EXIBICAO} — ${tentativa.nome_aluno}`;
 
-  await enviarHtmlEmail({
-    to: tentativa.email.trim(),
-    subject,
-    html,
-    replyTo,
-  });
+  try {
+    await enviarHtmlEmail({
+      to: tentativa.email.trim(),
+      subject,
+      html,
+      replyTo,
+    });
+    await db().query(
+      'UPDATE tentativas SET resultado_email_enviado_em = NOW(), resultado_email_ultimo_erro = NULL WHERE id = ?',
+      [tentId]
+    );
+  } catch (e) {
+    const msg = String(e.message || e).slice(0, 500);
+    try {
+      await db().query('UPDATE tentativas SET resultado_email_ultimo_erro = ? WHERE id = ?', [msg, tentId]);
+    } catch (_) {}
+    throw e;
+  }
 
   return { email: tentativa.email };
 }
@@ -710,26 +772,40 @@ app.post('/api/admin/tentativas/enviar-todos', requireAdmin, async (req, res) =>
        ORDER BY t.id`,
       [FILTRO]
     );
-    const ids = rows.map(r => r.id);
-    const enviados = [];
-    const falhas = [];
-    const delay = (ms) => new Promise(r => setTimeout(r, ms));
-    for (let i = 0; i < ids.length; i++) {
-      try {
-        const { email } = await enviarResultadoEmailPorTentativaId(ids[i]);
-        enviados.push({ id: ids[i], email });
-      } catch (err) {
-        falhas.push({ id: ids[i], error: err.message });
-      }
-      if (i < ids.length - 1) await delay(400);
+    const ids = rows.map((r) => r.id);
+    if (ids.length === 0) {
+      return res.json({
+        ok: true,
+        total: 0,
+        enviados: 0,
+        falhas: 0,
+        message: 'Nenhuma tentativa finalizada com e-mail para enviar.',
+      });
     }
+
     res.json({
       ok: true,
+      background: true,
       total: ids.length,
-      enviados: enviados.length,
-      falhas: falhas.length,
-      detalhes_enviados: enviados,
-      detalhes_falhas: falhas,
+      message:
+        `${ids.length} e-mail(ns) na fila no servidor (evita timeout do Railway). ` +
+        'Atualize o painel: coluna «Último envio». Logs: [enviar-todos].',
+    });
+
+    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+    setImmediate(() => {
+      (async () => {
+        for (let i = 0; i < ids.length; i++) {
+          try {
+            const { email } = await enviarResultadoEmailPorTentativaId(ids[i]);
+            console.log(`[enviar-todos] OK #${ids[i]} → ${email}`);
+          } catch (err) {
+            console.error(`[enviar-todos] FALHA #${ids[i]}:`, err.message);
+          }
+          if (i < ids.length - 1) await delay(280);
+        }
+        console.log('[enviar-todos] Fila concluída.');
+      })().catch((e) => console.error('[enviar-todos] erro na fila:', e));
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -799,10 +875,17 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  const adm = determineAdminPassword();
-  const hint = adm.slice(0, 4) + '*'.repeat(Math.max(0, adm.length - 4));
-  console.log(`✓ Estatística Computacional · ${TITULO_EXIBICAO} · porta ${PORT}`);
-  console.log(`🔑 Senha admin (hint): ${hint}  |  fonte: ${process.env.ADMIN_PASSWORD ? 'ADMIN_PASSWORD' : (process.env.DATABASE_URL ? 'DATABASE_URL' : 'hardcoded')}`);
-  console.log(`   → Para definir uma senha própria, adicione ADMIN_PASSWORD nas variáveis do Railway.`);
-});
+(async () => {
+  try {
+    await ensureEmailStatusColumns();
+  } catch (e) {
+    console.error('[DB] Colunas de e-mail:', e.message);
+  }
+  app.listen(PORT, () => {
+    const adm = determineAdminPassword();
+    const hint = adm.slice(0, 4) + '*'.repeat(Math.max(0, adm.length - 4));
+    console.log(`✓ Estatística Computacional · ${TITULO_EXIBICAO} · porta ${PORT}`);
+    console.log(`🔑 Senha admin (hint): ${hint}  |  fonte: ${process.env.ADMIN_PASSWORD ? 'ADMIN_PASSWORD' : 'fallback fixo (.env.example)'}`);
+    console.log(`   → Defina ADMIN_PASSWORD no Railway em produção.`);
+  });
+})();
