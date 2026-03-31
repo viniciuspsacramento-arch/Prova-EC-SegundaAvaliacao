@@ -1,0 +1,95 @@
+================================================================================
+COPIAR O BANCO IGUAL AO DA PROVA "segunda-prova-padm-ii" (Railway)
+================================================================================
+
+Eu (assistente) NÃO tenho acesso ao seu MySQL na Railway. Quem gera uma cópia
+IDÊNTICA é você, exportando do projeto ANTIGO e importando no MySQL NOVO da
+Prova-EC.
+
+Site de referência (admin): https://segunda-prova-padm-ii-production.up.railway.app/admin/
+
+--------------------------------------------------------------------------------
+1) EXPORTAR (projeto ANTIGO — onde já funciona a PAdm II)
+--------------------------------------------------------------------------------
+
+No painel Railway: projeto da "segunda-prova-padm-ii" → serviço MySQL →
+Variables / Connect e copie host, usuário, senha, porta, nome do banco
+(geralmente o database se chama "railway").
+
+No seu PC (com MySQL Client instalado) ou num terminal com mysql/mysqldump:
+
+  mysqldump -h HOST -P PORTA -u USUARIO -pSENHA ^
+    --single-transaction --routines --triggers ^
+    --databases railway > padm_ii_dump.sql
+
+(Use -p sem colar senha na linha: só "-p" e o terminal pede a senha.)
+
+Se preferir só o schema + dados sem criar database, um DBA pode ajustar;
+para clonar igual, o dump completo costuma ser o mais simples.
+
+--------------------------------------------------------------------------------
+2) IMPORTAR (projeto NOVO — Prova-EC-SegundaAvaliacao)
+--------------------------------------------------------------------------------
+
+No MySQL NOVO (vazio ou que você possa apagar), rode:
+
+  mysql -h HOST_NOVO -P PORTA -u USUARIO -p < padm_ii_dump.sql
+
+Use as credenciais do serviço MySQL do projeto Prova-EC no Railway.
+
+No painel do MySQL da Railway às vezes há aba "Query" para colar o .sql em
+partes se o arquivo for enorme.
+
+--------------------------------------------------------------------------------
+3) FAZER A APP PROVA-EC "ENXERGAR" AS PROVAS (importante)
+--------------------------------------------------------------------------------
+
+O dump traz os títulos antigos em `provas.titulo` (ex.: contêm "Segunda Prova").
+O servidor da Prova-EC, por padrão, filtra por:
+
+  "Estatística Computacional - Segunda Avaliação"
+
+Escolha UMA opção:
+
+  A) IGUAL AO FILTRO ANTIGO (mais rápido depois do dump)
+     No Railway (serviço NODE da Prova-EC), em Variables, defina:
+
+       PROVA_TITULO_LIKE=Segunda Prova
+
+     (O código adiciona % sozinho; o admin e alunos passam a usar as MESMAS
+     linhas de prova do banco antigo.)
+
+     Opcional: PROVA_TITULO_EXIBICAO continua sendo o título bonito na tela.
+
+  B) MANTER O TÍTULO "Estatística Computacional - Segunda Avaliação"
+     Depois do import, rode NO MYSQL NOVO o script:
+
+       database/clonar_provas_estatistica_computacional.sql
+
+     Ele duplica as 5 provas com o novo nome, reaproveitando as mesmas questões.
+     Deixe PROVA_TITULO_LIKE no padrão (EC).
+
+--------------------------------------------------------------------------------
+4) LIMPAR TENTATIVAS DA PROVA ANTIGA (opcional, mas comum)
+--------------------------------------------------------------------------------
+
+Se o dump trouxe `tentativas` e `respostas` dos alunos da outra prova e você
+quer banco "igual" em CONTEÚDO mas PROVA ZERADA para a EC:
+
+  TRUNCATE TABLE respostas;
+  TRUNCATE TABLE tentativas;
+
+(Confirme FKs; em alguns schemas a ordem inversa ou SET FOREIGN_KEY_CHECKS.)
+
+Só faça isso se souber que não precisa preservar histórico da PAdm II nesse
+banco (no MySQL novo só da EC, normalmente pode apagar).
+
+--------------------------------------------------------------------------------
+5) CONFERIR
+--------------------------------------------------------------------------------
+
+  SELECT id, titulo FROM provas ORDER BY titulo;
+
+Admin deve listar tentativas só das provas cujo título bate com PROVA_TITULO_LIKE.
+
+================================================================================
