@@ -2,55 +2,25 @@ require('dotenv').config();
 const express = require('express');
 const mysql   = require('mysql2/promise');
 const path    = require('path');
+const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Banco de dados ──────────────────────────────────────────────────────────
-// Railway MySQL costuma expor MYSQL_URL / MYSQL_PUBLIC_URL; o painel às vezes só referencia esses nomes.
-// Também aceitamos MYSQLHOST + MYSQLUSER + MYSQLPASSWORD + MYSQLPORT + MYSQLDATABASE (padrão Railway).
 function resolveDbUrl() {
-  const enc = (s) => encodeURIComponent(String(s ?? ''));
-
-  const fromParts = () => {
-    const host = process.env.MYSQLHOST || process.env.MYSQL_HOST || '';
-    const user = process.env.MYSQLUSER || process.env.MYSQL_USER || 'root';
-    const pass =
-      process.env.MYSQLPASSWORD ||
-      process.env.MYSQL_PASSWORD ||
-      process.env.MYSQL_ROOT_PASSWORD ||
-      '';
-    const port = process.env.MYSQLPORT || process.env.MYSQL_PORT || '3306';
-    const database =
-      process.env.MYSQLDATABASE || process.env.MYSQL_DATABASE || process.env.MYSQL_DATABASE_NAME || '';
-    if (host && database && pass !== '') {
-      return `mysql://${enc(user)}:${enc(pass)}@${host}:${port}/${enc(database)}`;
-    }
-    return '';
-  };
-
-  const candidates = [
-    process.env.DATABASE_URL,
-    process.env.MYSQL_URL,
-    process.env.MYSQL_PUBLIC_URL,
-    fromParts(),
-  ]
-    .map((s) => (typeof s === 'string' ? s.trim() : ''))
-    .filter(Boolean);
-
-  for (const envUrl of candidates) {
-    if (envUrl.includes('SENHA') || envUrl.includes('PORTA') || envUrl.startsWith('${{')) continue;
-    try {
-      const u = new URL(envUrl);
-      if (u.protocol === 'mysql:' && u.hostname && u.hostname !== 'host') return envUrl;
-    } catch (_) {}
+  const envUrl = (process.env.DATABASE_URL || '').trim();
+  if (!envUrl || envUrl.includes('SENHA') || envUrl.includes('PORTA') || envUrl.startsWith('${{')) {
+    throw new Error(
+      'DATABASE_URL inválida ou ausente. Configure no Railway ou no arquivo .env (veja .env.example).'
+    );
   }
-
-  throw new Error(
-    'Nenhuma URL MySQL válida. No Railway: referencie MYSQL_URL ou DATABASE_URL do serviço MySQL, ' +
-      'ou defina DATABASE_URL manualmente (mysql://...). Variáveis aceitas: DATABASE_URL, MYSQL_URL, MYSQL_PUBLIC_URL, ou MYSQLHOST+MYSQLUSER+MYSQLPASSWORD+MYSQLDATABASE.'
-  );
+  try {
+    const u = new URL(envUrl);
+    if (u.protocol === 'mysql:' && u.hostname && u.hostname !== 'host') return envUrl;
+  } catch (_) {}
+  throw new Error('DATABASE_URL deve ser uma URL mysql:// válida.');
 }
 
 const DB_URL = resolveDbUrl();
@@ -583,13 +553,59 @@ function httpErr(status, msg) {
   return e;
 }
 
-/** Envia e-mail com resultado; retorna { email }. Lança Error com .status */
-async function enviarResultadoEmailPorTentativaId(tentId) {
-  const resendKey = process.env.RESEND_API_KEY;
-  if (!resendKey) {
-    throw httpErr(500, 'RESEND_API_KEY não configurado. Adicione nas variáveis de ambiente do Railway.');
+/** Gmail (GMAIL_USER + GMAIL_APP_PASSWORD) tem prioridade sobre Resend (RESEND_API_KEY). */
+async function enviarHtmlEmail({ to, subject, html, replyTo }) {
+  const gmailUser = (process.env.GMAIL_USER || '').trim();
+  const gmailPass = (process.env.GMAIL_APP_PASSWORD || process.env.GMAIL_APP_PASS || '').trim();
+  const resendKey = (process.env.RESEND_API_KEY || '').trim();
+
+  if (gmailUser && gmailPass) {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: gmailUser, pass: gmailPass },
+    });
+    const fromName = (process.env.MAIL_FROM_NAME || 'Prova — UFCA').trim();
+    await transporter.sendMail({
+      from: `"${fromName}" <${gmailUser}>`,
+      to,
+      replyTo: replyTo || undefined,
+      subject,
+      html,
+    });
+    return;
   }
 
+  if (!resendKey) {
+    throw httpErr(
+      500,
+      'Configure envio: GMAIL_USER + GMAIL_APP_PASSWORD (Gmail) ou RESEND_API_KEY (Resend). Veja .env.example.'
+    );
+  }
+
+  const fromAddr =
+    (process.env.RESEND_FROM || '').trim() || 'Prova <onboarding@resend.dev>';
+  const emailResp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${resendKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: fromAddr,
+      to,
+      reply_to: replyTo || undefined,
+      subject,
+      html,
+    }),
+  });
+  const emailResult = await emailResp.json();
+  if (!emailResp.ok) {
+    throw new Error(emailResult.message || JSON.stringify(emailResult));
+  }
+}
+
+/** Envia e-mail com resultado; retorna { email }. Lança Error com .status */
+async function enviarResultadoEmailPorTentativaId(tentId) {
   const [[tentativa]] = await db().query(
     `SELECT t.id, t.nome_aluno, t.matricula, t.email, t.pontuacao,
             t.iniciado_em, t.finalizado_em, t.prova_id,
@@ -668,25 +684,15 @@ async function enviarResultadoEmailPorTentativaId(tentId) {
     <p style="color:#64748b;font-size:12px">Universidade Federal do Cariri · Prof. Vinicius Sacramento</p>
   </div>`;
 
-  const emailResp = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${resendKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: 'Prova Estatística Computacional <onboarding@resend.dev>',
-      to: tentativa.email.trim(),
-      reply_to: 'vinicius.sacramento@ufca.edu.br',
-      subject: `Resultado — ${TITULO_EXIBICAO} — ${tentativa.nome_aluno}`,
-      html,
-    }),
-  });
+  const replyTo = (process.env.MAIL_REPLY_TO || 'vinicius.sacramento@ufca.edu.br').trim();
+  const subject = `Resultado — ${TITULO_EXIBICAO} — ${tentativa.nome_aluno}`;
 
-  const emailResult = await emailResp.json();
-  if (!emailResp.ok) {
-    throw new Error(emailResult.message || JSON.stringify(emailResult));
-  }
+  await enviarHtmlEmail({
+    to: tentativa.email.trim(),
+    subject,
+    html,
+    replyTo,
+  });
 
   return { email: tentativa.email };
 }
