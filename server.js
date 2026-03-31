@@ -73,6 +73,16 @@ async function ensureEmailStatusColumns() {
   }
 }
 
+/** Provas “ocultas” só para esta app: linha continua no MySQL, mas não entram no sorteio das 5 turmas. */
+async function ensureProvasOcultasTable() {
+  await db().query(
+    `CREATE TABLE IF NOT EXISTS provas_ocultas_app (
+      prova_id INT NOT NULL PRIMARY KEY,
+      oculto_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+  );
+}
+
 // ─── Filtro: provas desta aplicação (título no MySQL). Sobrescreva com PROVA_TITULO_LIKE ──
 const PROVA_MATCH_RAW = (process.env.PROVA_TITULO_LIKE || 'Estatística Computacional - Segunda Avaliação').trim();
 const FILTRO = PROVA_MATCH_RAW.includes('%') ? PROVA_MATCH_RAW : `%${PROVA_MATCH_RAW}%`;
@@ -235,10 +245,13 @@ app.post('/api/tentativas', async (req, res) => {
       });
     }
 
-    // Buscar as 5 provas ordenadas (I → V)
+    // Buscar as 5 provas ordenadas (I → V), ignorando as ocultas só nesta aplicação
     const [provas] = await db().query(
       `SELECT id, COALESCE(titulo_publico, titulo) AS titulo, tempo_limite
-       FROM provas WHERE titulo LIKE ? ORDER BY titulo`,
+       FROM provas
+       WHERE titulo LIKE ?
+         AND id NOT IN (SELECT prova_id FROM provas_ocultas_app)
+       ORDER BY titulo`,
       [FILTRO]
     );
     if (provas.length < 5)
@@ -526,20 +539,74 @@ app.post('/api/auth/login', (req, res) => {
   });
 });
 
-// ─── GET /api/admin/provas — provas que batem com FILTRO (turmas I…V no ORDER BY titulo) ──
+// ─── GET /api/admin/provas — provas que batem com FILTRO (oculta = só nesta app, não apaga MySQL) ──
 app.get('/api/admin/provas', requireAdmin, async (req, res) => {
   try {
     const [rows] = await db().query(
       `SELECT p.id, p.titulo, p.titulo_publico, p.tempo_limite, p.criado_em,
               (SELECT COUNT(*) FROM tentativas t WHERE t.prova_id = p.id) AS n_tentativas,
               (SELECT COUNT(*) FROM tentativas t WHERE t.prova_id = p.id AND t.finalizado_em IS NOT NULL) AS n_finalizadas,
-              (SELECT COUNT(*) FROM provas_questoes pq WHERE pq.prova_id = p.id) AS n_questoes
+              (SELECT COUNT(*) FROM provas_questoes pq WHERE pq.prova_id = p.id) AS n_questoes,
+              CASE WHEN o.prova_id IS NOT NULL THEN 1 ELSE 0 END AS oculta
        FROM provas p
+       LEFT JOIN provas_ocultas_app o ON o.prova_id = p.id
        WHERE p.titulo LIKE ?
        ORDER BY p.titulo ASC`,
       [FILTRO]
     );
     res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── POST /api/admin/provas/:id/ocultar — não apaga a prova no banco; só tira desta aplicação ──
+app.post('/api/admin/provas/:id/ocultar', requireAdmin, async (req, res) => {
+  const provaId = Number(req.params.id);
+  if (!Number.isFinite(provaId) || provaId < 1) {
+    return res.status(400).json({ error: 'ID inválido.' });
+  }
+  try {
+    const [[row]] = await db().query('SELECT id FROM provas WHERE id = ? AND titulo LIKE ?', [provaId, FILTRO]);
+    if (!row) return res.status(404).json({ error: 'Prova não encontrada ou fora do filtro desta aplicação.' });
+    await db().query('INSERT IGNORE INTO provas_ocultas_app (prova_id) VALUES (?)', [provaId]);
+    const [[cnt]] = await db().query(
+      `SELECT COUNT(*) AS n FROM provas p
+       WHERE p.titulo LIKE ? AND p.id NOT IN (SELECT prova_id FROM provas_ocultas_app)`,
+      [FILTRO]
+    );
+    const ativas = Number(cnt.n) || 0;
+    const aviso =
+      ativas < 5
+        ? `Esta aplicação passa a enxergar ${ativas} prova(s) ativa(s). São necessárias 5 para o mapeamento por matrícula (turmas I–V).`
+        : null;
+    res.json({ ok: true, provas_ativas_no_filtro: ativas, aviso });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── POST /api/admin/provas/:id/restaurar — volta a prova para o conjunto ativo desta app ──
+app.post('/api/admin/provas/:id/restaurar', requireAdmin, async (req, res) => {
+  const provaId = Number(req.params.id);
+  if (!Number.isFinite(provaId) || provaId < 1) {
+    return res.status(400).json({ error: 'ID inválido.' });
+  }
+  try {
+    const [[row]] = await db().query('SELECT id FROM provas WHERE id = ? AND titulo LIKE ?', [provaId, FILTRO]);
+    if (!row) return res.status(404).json({ error: 'Prova não encontrada ou fora do filtro desta aplicação.' });
+    const [del] = await db().query('DELETE FROM provas_ocultas_app WHERE prova_id = ?', [provaId]);
+    const [[cnt]] = await db().query(
+      `SELECT COUNT(*) AS n FROM provas p
+       WHERE p.titulo LIKE ? AND p.id NOT IN (SELECT prova_id FROM provas_ocultas_app)`,
+      [FILTRO]
+    );
+    const ativas = Number(cnt.n) || 0;
+    res.json({
+      ok: true,
+      provas_ativas_no_filtro: ativas,
+      voltou: (del.affectedRows || 0) > 0,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -577,29 +644,6 @@ app.get('/api/admin/provas/:id', requireAdmin, async (req, res) => {
     }
 
     res.json({ prova, questoes });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// ─── DELETE /api/admin/provas/:id — excluir prova (cascata: vínculos + tentativas + respostas) ──
-app.delete('/api/admin/provas/:id', requireAdmin, async (req, res) => {
-  const provaId = Number(req.params.id);
-  if (!Number.isFinite(provaId) || provaId < 1) {
-    return res.status(400).json({ error: 'ID inválido.' });
-  }
-  try {
-    const [del] = await db().query('DELETE FROM provas WHERE id = ? AND titulo LIKE ?', [provaId, FILTRO]);
-    if (!(del.affectedRows > 0)) {
-      return res.status(404).json({ error: 'Prova não encontrada ou fora do filtro desta aplicação.' });
-    }
-    const [[cnt]] = await db().query('SELECT COUNT(*) AS n FROM provas WHERE titulo LIKE ?', [FILTRO]);
-    const restantes = Number(cnt.n) || 0;
-    const aviso =
-      restantes < 5
-        ? `Restam ${restantes} prova(s) com este filtro. A aplicação espera 5 provas (turmas I–V, ordenadas por título). Ajuste o banco ou o env PROVA_TITULO_LIKE.`
-        : null;
-    res.json({ ok: true, excluida_id: provaId, provas_restantes_no_filtro: restantes, aviso });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -957,8 +1001,9 @@ const PORT = process.env.PORT || 3001;
 (async () => {
   try {
     await ensureEmailStatusColumns();
+    await ensureProvasOcultasTable();
   } catch (e) {
-    console.error('[DB] Colunas de e-mail:', e.message);
+    console.error('[DB] Migração auxiliar:', e.message);
   }
   app.listen(PORT, () => {
     const adm = determineAdminPassword();

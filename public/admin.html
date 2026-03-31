@@ -151,8 +151,8 @@
           <div>
             <div class="title">Provas no MySQL (filtro atual da aplicação)</div>
             <div class="muted" style="max-width:52rem">
-              Cada turma (I…V) é uma linha em <code>provas</code>. A ordem abaixo é a mesma do sistema ao escolher a prova pela matrícula.
-              Excluir uma linha apaga a prova, questões vinculadas <em>só</em> nessa prova e <strong>todas</strong> as tentativas/respostas dela.
+              Cada turma (I…V) é uma linha em <code>provas</code>. A ordem das <strong>ativas</strong> (não ocultas) é a do sorteio por matrícula.
+              <strong>Ocultar desta app</strong> não apaga nada no MySQL: só tira a prova do conjunto usado por esta aplicação até você <strong>Restaurar</strong>.
             </div>
           </div>
           <button type="button" id="btn-refresh-provas" class="secondary">Recarregar provas</button>
@@ -161,7 +161,7 @@
           <table>
             <thead>
               <tr>
-                <th>Ordem (turma)</th>
+                <th>Turma (ativas)</th>
                 <th>ID</th>
                 <th>Título</th>
                 <th>Título público</th>
@@ -169,7 +169,7 @@
                 <th>Tent.</th>
                 <th>Fin.</th>
                 <th>Ver</th>
-                <th>Excluir</th>
+                <th>Ocultar / restaurar</th>
               </tr>
             </thead>
             <tbody id="tbody-provas"></tbody>
@@ -298,11 +298,19 @@
           tbodyProvas.innerHTML = '<tr><td colspan="9" class="muted">Nenhuma prova encontrada com o filtro configurado no servidor (PROVA_TITULO_LIKE).</td></tr>';
           return;
         }
+        let idxAtiva = 0;
         tbodyProvas.innerHTML = list.map((p, ord) => {
-          const tituloJs = JSON.stringify(p.titulo || '');
+          const oculta = Number(p.oculta) === 1 || p.oculta === true;
+          const turmaApp = oculta ? '—' : String(++idxAtiva);
+          const badge = oculta
+            ? ' <span class="status warn" style="font-size:.72rem">Oculta nesta app</span>'
+            : ' <span class="status ok" style="font-size:.72rem">Ativa</span>';
+          const acao = oculta
+            ? `<button type="button" class="secondary" onclick="restaurarProva(${p.id})">Restaurar</button>`
+            : `<button type="button" class="secondary" onclick="ocultarProva(${p.id})">Ocultar desta app</button>`;
           return `
-          <tr>
-            <td><strong>${ord + 1}</strong> <span class="muted">(índice ${ord})</span></td>
+          <tr style="${oculta ? 'opacity:.9' : ''}">
+            <td><strong>${turmaApp}</strong>${badge}<br><span class="muted">ordem título #${ord + 1}</span></td>
             <td>${p.id}</td>
             <td>${escHtml(p.titulo)}</td>
             <td class="small">${escHtml(p.titulo_publico || '—')}</td>
@@ -310,7 +318,7 @@
             <td>${p.n_tentativas ?? 0}</td>
             <td>${p.n_finalizadas ?? 0}</td>
             <td><button type="button" class="secondary" onclick="verProva(${p.id})">Abrir</button></td>
-            <td><button type="button" class="danger" onclick="excluirProva(${p.id}, ${tituloJs}, this)">Excluir</button></td>
+            <td>${acao}</td>
           </tr>`;
         }).join('');
       } catch (e) {
@@ -361,24 +369,20 @@
       }
     };
 
-    window.excluirProva = async (id, titulo, btn) => {
-      const t = titulo || '(sem título)';
+    window.ocultarProva = async (id) => {
       if (!confirm(
-        'EXCLUIR ESTA PROVA DO BANCO?\n\n' +
-        `ID ${id} — ${t}\n\n` +
-        'Apaga vínculos desta prova, todas as tentativas e respostas associadas. Não dá para desfazer.'
+        'Ocultar esta prova só nesta aplicação?\n\n' +
+        'Nada é apagado do MySQL. A prova deixa de entrar nas 5 turmas até você restaurar.'
       )) return;
-      btn.disabled = true;
-      const old = btn.textContent;
-      btn.textContent = '…';
       try {
-        const r = await fetch(`/api/admin/provas/${id}`, {
-          method: 'DELETE',
-          headers: { 'x-admin-password': S.senha },
+        const r = await fetch(`/api/admin/provas/${id}/ocultar`, {
+          method: 'POST',
+          headers: { 'x-admin-password': S.senha, 'Content-Type': 'application/json' },
+          body: '{}',
         });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.error || 'Erro ao excluir.');
-        let msg = `Prova #${id} excluída. Restam ${j.provas_restantes_no_filtro} prova(s) com o filtro atual.`;
+        if (!r.ok) throw new Error(j.error || 'Erro ao ocultar.');
+        let msg = `Provas ativas nesta app: ${j.provas_ativas_no_filtro}.`;
         if (j.aviso) msg += '\n\n⚠ ' + j.aviso;
         alert(msg);
         const dbox = document.getElementById('detalhes-prova-box');
@@ -387,8 +391,26 @@
         await carregar();
       } catch (e) {
         alert(e.message);
-        btn.disabled = false;
-        btn.textContent = old;
+      }
+    };
+
+    window.restaurarProva = async (id) => {
+      try {
+        const r = await fetch(`/api/admin/provas/${id}/restaurar`, {
+          method: 'POST',
+          headers: { 'x-admin-password': S.senha, 'Content-Type': 'application/json' },
+          body: '{}',
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'Erro ao restaurar.');
+        const msg = j.voltou
+          ? `Prova #${id} voltou a valer nesta app. Ativas: ${j.provas_ativas_no_filtro}.`
+          : `Já estava ativa. Ativas: ${j.provas_ativas_no_filtro}.`;
+        alert(msg);
+        await carregarProvas();
+        await carregar();
+      } catch (e) {
+        alert(e.message);
       }
     };
 
