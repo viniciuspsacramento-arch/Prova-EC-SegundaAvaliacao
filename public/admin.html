@@ -168,11 +168,17 @@
                 <th>Qs</th>
                 <th>Tent.</th>
                 <th>Fin.</th>
-                <th>Ação</th>
+                <th>Ver</th>
+                <th>Excluir</th>
               </tr>
             </thead>
             <tbody id="tbody-provas"></tbody>
           </table>
+        </div>
+        <div id="detalhes-prova-box" class="detalhes" style="display:none;border-top:1px solid var(--border);padding:16px 18px 20px;background:#fafafa">
+          <h3 id="detalhes-prova-titulo" style="margin:0 0 8px;font-size:1rem">Visualização da prova</h3>
+          <div id="detalhes-prova-meta" class="small"></div>
+          <div id="detalhes-prova-questoes" style="margin-top:14px"></div>
         </div>
       </div>
 
@@ -289,7 +295,7 @@
       try {
         const list = await api('/api/admin/provas');
         if (!list.length) {
-          tbodyProvas.innerHTML = '<tr><td colspan="8" class="muted">Nenhuma prova encontrada com o filtro configurado no servidor (PROVA_TITULO_LIKE).</td></tr>';
+          tbodyProvas.innerHTML = '<tr><td colspan="9" class="muted">Nenhuma prova encontrada com o filtro configurado no servidor (PROVA_TITULO_LIKE).</td></tr>';
           return;
         }
         tbodyProvas.innerHTML = list.map((p, ord) => {
@@ -303,13 +309,57 @@
             <td>${p.n_questoes ?? 0}</td>
             <td>${p.n_tentativas ?? 0}</td>
             <td>${p.n_finalizadas ?? 0}</td>
-            <td><button type="button" class="danger" onclick="excluirProva(${p.id}, ${tituloJs}, this)">Excluir prova</button></td>
+            <td><button type="button" class="secondary" onclick="verProva(${p.id})">Abrir</button></td>
+            <td><button type="button" class="danger" onclick="excluirProva(${p.id}, ${tituloJs}, this)">Excluir</button></td>
           </tr>`;
         }).join('');
       } catch (e) {
-        tbodyProvas.innerHTML = `<tr><td colspan="8" class="msg">${escHtml(e.message)}</td></tr>`;
+        tbodyProvas.innerHTML = `<tr><td colspan="9" class="msg">${escHtml(e.message)}</td></tr>`;
       }
     }
+
+    window.verProva = async (provaId) => {
+      const box = document.getElementById('detalhes-prova-box');
+      const titEl = document.getElementById('detalhes-prova-titulo');
+      const metaEl = document.getElementById('detalhes-prova-meta');
+      const qEl = document.getElementById('detalhes-prova-questoes');
+      if (!box) return;
+      box.style.display = 'block';
+      titEl.textContent = 'Carregando…';
+      metaEl.innerHTML = '';
+      qEl.innerHTML = '<p class="muted">Aguarde.</p>';
+      try {
+        const data = await api(`/api/admin/provas/${provaId}`);
+        const { prova, questoes } = data;
+        titEl.textContent = `Prova #${prova.id} — ordem no sistema conforme linha da tabela acima`;
+        metaEl.innerHTML = `
+          <strong>Título:</strong> ${escHtml(prova.titulo)}<br>
+          <strong>Público:</strong> ${escHtml(prova.titulo_publico || '—')}<br>
+          <strong>Tempo limite (min):</strong> ${prova.tempo_limite ?? '—'} · <strong>Questões:</strong> ${questoes.length}
+        `;
+        if (!questoes.length) {
+          qEl.innerHTML = '<p class="muted">Nenhuma questão vinculada a esta prova.</p>';
+          return;
+        }
+        qEl.innerHTML = questoes.map((q) => {
+          const alts = (q.alternativas || []).map((a) => {
+            const mark = a.correta ? ' <span style="color:var(--ok);font-weight:700">(correta)</span>' : '';
+            return `<li style="margin:6px 0">${escHtml(a.texto || '')}${mark}</li>`;
+          }).join('');
+          return `
+            <div style="margin-bottom:22px;padding:14px;background:#fff;border:1px solid var(--border);border-radius:12px">
+              <div style="font-weight:700;margin-bottom:8px">Questão ${q.ordem} <span class="muted" style="font-weight:400">· ${q.valor_questao ?? '?'} pts · id questão ${q.questao_id}</span></div>
+              <div style="white-space:pre-wrap;line-height:1.45;margin-bottom:10px">${escHtml(q.enunciado || '')}</div>
+              <div class="small" style="color:var(--muted);margin-bottom:6px">Alternativas</div>
+              <ol style="margin:0;padding-left:1.25rem">${alts}</ol>
+            </div>`;
+        }).join('');
+        box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (e) {
+        titEl.textContent = 'Erro';
+        qEl.innerHTML = `<p class="msg">${escHtml(e.message)}</p>`;
+      }
+    };
 
     window.excluirProva = async (id, titulo, btn) => {
       const t = titulo || '(sem título)';
@@ -331,6 +381,8 @@
         let msg = `Prova #${id} excluída. Restam ${j.provas_restantes_no_filtro} prova(s) com o filtro atual.`;
         if (j.aviso) msg += '\n\n⚠ ' + j.aviso;
         alert(msg);
+        const dbox = document.getElementById('detalhes-prova-box');
+        if (dbox) dbox.style.display = 'none';
         await carregarProvas();
         await carregar();
       } catch (e) {

@@ -545,6 +545,43 @@ app.get('/api/admin/provas', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── GET /api/admin/provas/:id — questões, alternativas e gabarito (só provas do filtro) ──
+app.get('/api/admin/provas/:id', requireAdmin, async (req, res) => {
+  const provaId = Number(req.params.id);
+  if (!Number.isFinite(provaId) || provaId < 1) {
+    return res.status(400).json({ error: 'ID inválido.' });
+  }
+  try {
+    const [[prova]] = await db().query(
+      `SELECT p.id, p.titulo, p.titulo_publico, p.descricao, p.tempo_limite, p.criado_em
+       FROM provas p WHERE p.id = ? AND p.titulo LIKE ?`,
+      [provaId, FILTRO]
+    );
+    if (!prova) return res.status(404).json({ error: 'Prova não encontrada ou fora do filtro.' });
+
+    const [questoes] = await db().query(
+      `SELECT q.id AS questao_id, q.enunciado, pq.ordem, pq.valor_questao
+       FROM provas_questoes pq
+       JOIN questoes q ON q.id = pq.questao_id
+       WHERE pq.prova_id = ?
+       ORDER BY pq.ordem`,
+      [provaId]
+    );
+
+    for (const q of questoes) {
+      const [alts] = await db().query(
+        'SELECT id, texto, ordem, correta FROM alternativas WHERE questao_id = ? ORDER BY ordem, id',
+        [q.questao_id]
+      );
+      q.alternativas = alts;
+    }
+
+    res.json({ prova, questoes });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── DELETE /api/admin/provas/:id — excluir prova (cascata: vínculos + tentativas + respostas) ──
 app.delete('/api/admin/provas/:id', requireAdmin, async (req, res) => {
   const provaId = Number(req.params.id);
