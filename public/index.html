@@ -198,17 +198,7 @@
   .resp-item .r-certo { color: var(--verde); font-weight: 600; }
   .resp-item .r-errado { color: var(--vermelho); }
 
-  .aviso-tab {
-    display: none;
-    position: fixed; inset: 0; z-index: 10000;
-    background: rgba(0,0,0,.85);
-    align-items: center; justify-content: center;
-    flex-direction: column; gap: 16px; text-align: center;
-    color: #fff;
-  }
-  .aviso-tab.visivel { display: flex; }
-  .aviso-tab h2 { font-size: 1.6rem; }
-  .aviso-tab p { font-size: 1rem; opacity: .85; }
+
 
   @media (max-width: 640px) {
     .card { margin: 0; border-radius: 0; }
@@ -222,12 +212,7 @@
 <!-- Marca d'água (ativa durante a prova) -->
 <div id="watermark"></div>
 
-<!-- Aviso troca de aba -->
-<div class="aviso-tab" id="aviso-tab">
-  <h2>⚠️ Saída detectada!</h2>
-  <p>Você saiu da aba da prova.<br>Esta ocorrência foi registrada.</p>
-  <button class="btn btn-vermelho" onclick="fecharAvisoTab()">Entendi, voltar à prova</button>
-</div>
+
 
 <!-- ═══════════════════════════════════════════════════════════════════
      TELA 1 — ENTRADA
@@ -398,15 +383,13 @@ function ativarProtecoes() {
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && S.tentativaId) {
+      // Registra silenciosamente no servidor (sem exibir aviso ao aluno)
       fetch(`/api/tentativas/${S.tentativaId}/troca-aba`, { method: 'POST' });
-      document.getElementById('aviso-tab').classList.add('visivel');
     }
   });
 }
 
-function fecharAvisoTab() {
-  document.getElementById('aviso-tab').classList.remove('visivel');
-}
+
 
 /** GPS do navegador (opcional) — usado para verificar proximidade ao campus UFCA Juazeiro */
 function obterGeoGps() {
